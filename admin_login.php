@@ -114,7 +114,7 @@
 <body>
     <div class="login-container">
         <h2>Admin Login</h2>
-        <form method="post" action="">
+        <form method="post" action="" autocomplete="off">
             <label for="username">Username:</label>
             <input type="text" id="username" name="username" required>
             

@@ -19,6 +19,7 @@
                 if ($row['username'] == $n && $row['password'] == $p) {
                     // Store the username in the session
                     $_SESSION['userid'] = $row['username'];
+			$_SESSION['id'] = $row['id'];
                     header('location:homepage.php');
                 }
             }
@@ -119,7 +120,7 @@
 
     <div class="login-container">
         <h2>User Login</h2>
-        <form method="post" action="">
+        <form method="post" action="" autocomplete="off">
             <label for="username">Username:</label>
             <input type="text" id="username" name="username" required>
             

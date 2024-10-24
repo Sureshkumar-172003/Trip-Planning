@@ -61,7 +61,7 @@ include 'admin_dashboard.php';?>
 </head>
 <body>
     <div class="container">
-        <h2>Add Hotel and Guide Details for a Place</h2>
+        <h2>Add Hotel Details for a Place</h2>
         <form action="" method="post" enctype="multipart/form-data">
             <div class="form-group">
                 <label for="place_id">Select Place:</label>

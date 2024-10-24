@@ -5,10 +5,14 @@ $place_name = $_GET['id'];
 // Connect to the database
 include 'database.php';
 
+
 // Fetch place details
 $place_query = "SELECT * FROM place WHERE name = '$place_name'";
 $place_result = $conn->query($place_query);
 $place = $place_result->fetch_assoc();
+
+$bus_price = $place['bus'];
+$car_price = $place['car'];
 
 // Fetch hotels for the place from 'details' table (admin table) with hotel_name, hotel_image, hotel_price, and hotel_description
 $hotel_query = "SELECT hotel_name, hotel_image, hotel_price, hotel_description FROM details WHERE place_name = '$place_name'";
@@ -27,7 +31,41 @@ if (mysqli_num_rows($result) > 0) {
         $places[] = $row;  // Store the place data in an array
     }
 }
+if (isset($_POST['fromDate']) && isset($_POST['toDate']) && isset($_POST['rooms']) && isset($_POST['hotel_name'])) {
+    $fromDate = $_POST['fromDate'];
+    $toDate = $_POST['toDate'];
+    $num_rooms = $_POST['rooms'];
+    $hotel_name = $_POST['hotel_name']; // Get the selected hotel name from the form
 
+    // Query to check room availability
+    $availability_query = "
+        SELECT SUM(num_rooms) as booked_rooms
+        FROM book_hotel 
+        WHERE hotel_name = ? 
+        AND ((start_date <= ? AND end_date >= ?) OR (start_date <= ? AND end_date >= ?))
+    ";
+    
+    // Prepare statement to prevent SQL injection
+    $stmt = $conn->prepare($availability_query);
+    $stmt->bind_param("sssss", $hotel_name, $toDate, $toDate, $fromDate, $fromDate);
+    
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+
+    $booked_rooms = $row['booked_rooms'] ? $row['booked_rooms'] : 0;
+
+    // Assuming you have a fixed number of rooms available (e.g., 10)
+    $total_available_rooms = 10; 
+
+    if ($booked_rooms + $num_rooms > $total_available_rooms) {
+        $availability_message = "Not enough rooms available for the selected dates.";
+    } else {
+        $availability_message = "Rooms are available for the selected dates.";
+    }
+
+    $stmt->close();
+}
 ?>
 
 <!DOCTYPE html>
@@ -37,7 +75,8 @@ if (mysqli_num_rows($result) > 0) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Plan Trip to <?= htmlspecialchars($place['name']); ?></title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-    <style>
+         
+        <style>
         body {
             font-family: 'Arial', sans-serif;
             background-color: #f4f4f4;
@@ -74,6 +113,7 @@ if (mysqli_num_rows($result) > 0) {
 
         .form-container select, 
         .form-container input[type="number"], 
+.form-container input[type="date"],
         .form-container input[type="submit"] {
             padding: 10px;
             border: 1px solid #ddd;
@@ -159,21 +199,55 @@ if (mysqli_num_rows($result) > 0) {
         .hidden-section {
             display: none;
         }
+/* Container styling */
+label {
+    font-size: 18px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 10px;
+    display: block;
+}
 
-        /* Guide option styles */
-        .guide-option {
-            display: flex;
-            align-items: center;
-            margin-bottom: 10px;
-        }
+/* Radio button styling */
+input[type="radio"] {
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 2px solid #4CAF50;
+    border-radius: 50%;
+    outline: none;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    margin-right: 8px;
+}
 
-        .guide-option img {
-            width: 100px;
-            height: 100px;
-            margin-right: 10px;
-            border-radius: 8px;
-            object-fit: cover;
-        }
+/* Radio button checked state */
+input[type="radio"]:checked {
+    background-color: #4CAF50;
+}
+
+/* Label for radio buttons */
+label[for="yes"], label[for="no"] {
+    font-size: 16px;
+    color: #555;
+    margin-left: 8px;
+    cursor: pointer;
+}
+
+/* Hover effect for radio button labels */
+label[for="yes"]:hover, label[for="no"]:hover {
+    color: #4CAF50;
+    transition: color 0.3s;
+}
+
+	#user-budget {
+    		padding: 10px;
+    		border: 1px solid #ddd;
+    		border-radius: 5px;
+    		font-size: 1rem; /* Keep the font size same */
+    		width: 100%; /* Set the width to 100% for consistency */
+    		margin-bottom: 15px; /* Maintain spacing below the input */
+	}
 
         .error-message {
             color: red;
@@ -184,8 +258,75 @@ if (mysqli_num_rows($result) > 0) {
             height: 300px;
             width:100%;
         }
+	button {
+            padding: 10px;
+            font-size: 1rem;
+            background-color: #4CAF50; /* Same as submit button */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            width: 100%; /* Match width with other inputs */
+        }
+
+        button:hover {
+            background-color: #45a049; /* Match hover effect */
+        }
     </style>
     <script>
+
+	    document.addEventListener('DOMContentLoaded', function() {
+            const toDateInput = document.getElementById('toDate');
+            const fromDateInput = document.getElementById('fromDate');
+            const daysInput = document.getElementById('days');
+	   
+            fromDateInput.addEventListener('change', function() {
+                const fromDate = new Date(fromDateInput.value);
+                const toDate = new Date(fromDate);
+                toDate.setDate(fromDate.getDate() + 3); // Set max to 3 days after fromDate
+                
+                const maxToDate = toDate.toISOString().split('T')[0];
+                toDateInput.setAttribute('max', maxToDate);
+                
+                // Automatically select the number of days based on from and to date
+                if (toDateInput.value) {
+                    updateDaysCount(fromDate, new Date(toDateInput.value));
+                }
+            });
+
+            toDateInput.addEventListener('change', function() {
+                const fromDate = new Date(fromDateInput.value);
+                if (fromDateInput.value) {
+                    updateDaysCount(fromDate, new Date(toDateInput.value));
+                }
+            });
+        });
+
+	
+        function updateDaysCount(fromDate, toDate) {
+            const timeDiff = toDate - fromDate;
+            const days = Math.ceil(timeDiff / (1000 * 60 * 60 * 24)); // Convert time difference to days
+            document.getElementById("days").value = days > 0 ? days : 1; // Ensure at least 1 day
+            updateSchedule();
+            calculateBudget();
+        }
+	
+	let guideCost = 0; // Initialize guide cost
+
+	// Attach event listeners for guide cost options
+	document.addEventListener('DOMContentLoaded', function() {
+   	 document.getElementById('yes').addEventListener('click', function() {
+        guideCost = 800 * parseInt(document.getElementById('days').value); // Calculate guide cost based on days
+        calculateBudget(); // Recalculate budget
+    	});
+
+    	document.getElementById('no').addEventListener('click', function() {
+        guideCost = 0; // Reset guide cost
+        calculateBudget(); // Recalculate budget
+    	});
+	});
+
         // Function to update the schedule dynamically based on the number of days selected
         function updateSchedule() {
             const days = document.getElementById("days").value;
@@ -211,71 +352,87 @@ if (mysqli_num_rows($result) > 0) {
             document.getElementById('extra-options').style.display = 'block';
         }
 
-        // Function to validate the total number of adults and children
+        function calculateBudget() {
+            const days = parseInt(document.getElementById('days').value) || 0;
+            const adults = parseInt(document.getElementById('adults').value) || 0;
+            const children = parseInt(document.getElementById('children').value) || 0;
+            const rooms = parseInt(document.getElementById('rooms').value) || 0;
+
+            const hotelElement = document.querySelector('input[name="hotel"]:checked');
+            const foodElement = document.getElementById('food');
+	    const travelModeElement = document.getElementById('travel-mode');
+
+
+            if (!days || !rooms || !hotelElement || !foodElement || !travelModeElement) {
+                document.getElementById('submit-btn').disabled = true;
+                return;
+            }
+
+            // Extract hotel price from selected hotel
+            const hotelPrice = parseInt(
+                hotelElement.nextElementSibling.nextElementSibling.innerText.split('₹')[1].split(' ')[0]
+            );
+
+            // Extract food cost from selected food preference
+            const foodCost = parseInt(
+                foodElement.selectedOptions[0].text.split('₹')[1].split(' ')[0]
+            );
+
+	    const travelModePrice = parseInt(
+        	travelModeElement.selectedOptions[0].text.split('₹')[1].split(' ')[0]
+    	     );
+
+            // Calculate total costs
+            const totalFoodCost = (adults * foodCost + children * foodCost * 0.5) * days;
+            const totalHotelCost = rooms * hotelPrice * days;
+	    const totalTravelCost = travelModePrice * days;
+
+	    const totalBudget = totalFoodCost + totalHotelCost + totalTravelCost + guideCost;
+
+            // Display the calculated budget
+            document.getElementById('user-budget').value = `₹${totalBudget}`;
+
+            // Enable the submit button only if a valid budget is calculated
+            document.getElementById('submit-btn').disabled = false;
+
+        }
+
+        // Validate adults and children count
         function validateAdultsChildren() {
-            const totalMembers = parseInt(document.getElementById("members").value);
-            const adults = parseInt(document.getElementById("adults").value) || 0;
-            const children = parseInt(document.getElementById("children").value) || 0;
+            const totalMembers = parseInt(document.getElementById('members').value);
+            const adults = parseInt(document.getElementById('adults').value) || 0;
+            const children = parseInt(document.getElementById('children').value) || 0;
 
             if (adults + children > totalMembers) {
-                alert("The total number of adults and children cannot exceed the total number of members.");
-                document.getElementById("adults").value = '';
-                document.getElementById("children").value = '';
+                alert("Total adults and children cannot exceed the total members.");
+                document.getElementById('adults').value = '';
+                document.getElementById('children').value = '';
             }
         }
 
-        // Function to calculate the total budget
-        function calculateBudget() {
-            const days = parseInt(document.getElementById('days').value);
-            const members = parseInt(document.getElementById('members').value);
-            const adults = parseInt(document.getElementById('adults').value);
-            const children = parseInt(document.getElementById('children').value);
-            const rooms = parseInt(document.getElementById('rooms').value);
-            const hotelPrice = parseInt(document.querySelector('input[name="hotel"]:checked').nextElementSibling.nextElementSibling.innerText.split('₹')[1].split(' ')[0]);
-            const foodCost = parseInt(document.getElementById('food').selectedOptions[0].text.split('₹')[1].split(' ')[0]);
+        // Attach listeners for calculation and validation
+        function attachEventListeners() {
+            document.getElementById('days').addEventListener('change', calculateBudget);
+            document.getElementById('adults').addEventListener('change', () => {
+                validateAdultsChildren();
+                calculateBudget();
+            });
+            document.getElementById('children').addEventListener('change', () => {
+                validateAdultsChildren();
+                calculateBudget();
+            });
+            document.getElementById('rooms').addEventListener('change', calculateBudget);
+            document.getElementById('food').addEventListener('change', calculateBudget);
 
-            if (!days || !members || !adults || !rooms || !hotelPrice || !foodCost) return 0;
-
-            // Calculate total food cost
-            const totalFoodCost = members * foodCost * days;
-
-            // Calculate hotel cost (rooms * price per night * days)
-            const totalHotelCost = rooms * hotelPrice * days;
-
-            // Total budget
-            return totalFoodCost + totalHotelCost;
+            const hotelOptions = document.querySelectorAll('input[name="hotel"]');
+            hotelOptions.forEach(option =>
+                option.addEventListener('change', calculateBudget)
+            );
         }
 
-        // Function to update the budget status and enable/disable the submit button
-        function checkBudget() {
-            const userBudget = parseInt(document.getElementById('user-budget').value) || 0;
-            const calculatedBudget = calculateBudget();
-
-            if (userBudget < calculatedBudget) {
-                document.getElementById('budget-error').innerText = `Your budget is less than the required amount (₹${calculatedBudget}).`;
-                document.getElementById('submit-btn').disabled = true;
-            } else {
-                document.getElementById('budget-error').innerText = '';
-                document.getElementById('submit-btn').disabled = false;
-            }
-        }
-
-        // Function to attach budget validation event listeners
-        function attachBudgetValidation() {
-            document.getElementById('days').addEventListener('change', checkBudget);
-            document.getElementById('members').addEventListener('change', checkBudget);
-            document.getElementById('adults').addEventListener('change', checkBudget);
-            document.getElementById('children').addEventListener('change', checkBudget);
-            document.getElementById('rooms').addEventListener('change', checkBudget);
-            document.getElementById('food').addEventListener('change', checkBudget);
-            document.getElementById('hotel').addEventListener('change', checkBudget);
-            document.getElementById('user-budget').addEventListener('input', checkBudget);
-        }
-
-        // Initialize validation when the page loads
-        window.onload = function() {
-            attachBudgetValidation();
-            updateSchedule(); // Existing function to update the schedule
+        // Initialize listeners when the page loads
+        window.onload = function () {
+            attachEventListeners();
         };
     </script>
 </head>
@@ -283,9 +440,16 @@ if (mysqli_num_rows($result) > 0) {
     <h2>Plan Your Trip to <?= htmlspecialchars($place['name']); ?></h2>
 
     <div class="form-container">
-        <form action="calculate_budget.php" method="post">
+        <form action="book_trip.php" method="post">
             <!-- Hidden Field for Place Name -->
             <input type="hidden" name="place_name" value="<?= htmlspecialchars($place['name']); ?>">
+
+	    <label for="fromDate">From Date:</label>
+            <input type="date" id="fromDate" name="fromDate" required>
+
+            <label for="toDate">To Date:</label>
+            <input type="date" id="toDate" name="toDate" required>
+
 
             <!-- Number of Days -->
             <label for="days">Select Number of Days (1-3):</label>
@@ -313,6 +477,14 @@ if (mysqli_num_rows($result) > 0) {
                 <option value="nonveg">Non-Veg - ₹<?= htmlspecialchars($place['nonveg']); ?> per person</option>
             </select>
 
+	    <!-- Travel Mode Selection -->
+	    <label for="travel-mode">Select Travel Mode:</label>
+	    <select name="travel_mode" id="travel-mode">
+    		<option value="bus">Bus - ₹<?= htmlspecialchars($bus_price); ?></option>
+    		<option value="car">Car - ₹<?= htmlspecialchars($car_price); ?></option>
+	    </select>
+
+
             <!-- Hotel Selection -->
             <label for="hotel">Select Hotel:</label>
             <div id="hotel">
@@ -336,62 +508,86 @@ if (mysqli_num_rows($result) > 0) {
                 <label for="children">Enter Number of Children:</label>
                 <input type="number" name="children" id="children" min="0" required onchange="validateAdultsChildren()">
 
-                <label for="rooms">Enter Number of Rooms:</label>
-                <input type="number" name="rooms" id="rooms" min="1" required>
+                <label for="rooms">Number of Rooms:</label>
+        	<input type="number" id="rooms" name="rooms" required min="1">
+
+        	
             </div>
 
-            <!-- Guide Selection -->
-            <label for="guide">Select a Guide:</label>
-            <div id="guide">
-                <?php while($guide = $guide_result->fetch_assoc()) { ?>
-                    <div class="guide-option">
-                        <input type="radio" name="guide" value="<?= htmlspecialchars($guide['guide_name']); ?>" required>
-                        <img src="data:image/jpeg;base64,<?= base64_encode($guide['guide_image']); ?>" alt="Guide Image">
-                        <div>
-                            <strong><?= htmlspecialchars($guide['guide_name']); ?></strong> - <?= htmlspecialchars($guide['guide_phone_no']); ?>
-                        </div>
-                    </div>
-                <?php } ?>
-            </div>
+           <label>Do you need a guide?</label><br>
+	   <input type="radio" id="yes" name="guide" value="yes">
+	   <label for="yes">Yes</label><br>
+	   <input type="radio" id="no" name="guide" value="no">
+	   <label for="no">No</label><br>
 
             <!-- Budget Input Field -->
-            <label for="user-budget">Enter Your Budget:</label>
-            <input type="number" id="user-budget" name="user_budget" min="1" required>
-            <div id="budget-error" class="error-message"></div>
-            <div id="map"></div>
+           <label for="user-budget">Estimated Budget :</label>
+           <input type="text" id="user-budget" name="user_budget" readonly>            
+           <div id="map"></div>
 
 <!-- Include Leaflet.js -->
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-    // Use a fallback in case 'place_lat' or 'place_lng' are not set
-    var defaultLat = <?php echo isset($place['place_lat']) ? htmlspecialchars($place['place_lat']) : '13.0827'; ?>;
-    var defaultLng = <?php echo isset($place['place_lng']) ? htmlspecialchars($place['place_lng']) : '80.2707'; ?>;
+   
+        // Fetch weather data for given latitude and longitude
+        async function getWeatherData(lat, lng) {
+            const api_key = '7JFTHRXBCNEZJDP6H9NYY2AE2'; // Replace with your Visual Crossing API key
+            const weather_url = `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${lat},${lng}?unitGroup=metric&key=${api_key}&contentType=json`;
 
-    var map = L.map('map').setView([defaultLat, defaultLng], 8);
+            const response = await fetch(weather_url);
+            const data = await response.json();
+            return data;
+        }
 
-    // Add OpenStreetMap tiles
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+        // Initialize the map and markers with weather data
+        function initializeMap() {
+            const defaultLat = <?php echo isset($place['lat']) ? htmlspecialchars($place['lat']) : '20'; ?>;
+            const defaultLng = <?php echo isset($place['lng']) ? htmlspecialchars($place['lng']) : '80'; ?>;
 
-    var places = <?php echo json_encode($places); ?>;
-    
-    // Check if 'places' is a valid array and iterate
-    if (Array.isArray(places)) {
-        places.forEach(function(place) {
-            var marker = L.marker([parseFloat(place.lat), parseFloat(place.lng)]).addTo(map);
-            marker.bindPopup('<h3>' + place.place_name + '</h3>');
-        });
-    } else {
-        console.error("Places data is not an array.");
-    }
+            const map = L.map('map').setView([defaultLat, defaultLng], 8);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            const places = <?php echo json_encode($places); ?>;
+            places.forEach(function(place) {
+                const lat = parseFloat(place.lat);
+                const lng = parseFloat(place.lng);
+                const place_name = place.place_name;
+
+                // Fetch weather for each place
+                getWeatherData(lat, lng).then(data => {
+                    if (data && data.currentConditions) {
+                        const temperature = data.currentConditions.temp;
+                        const condition = data.currentConditions.conditions;
+
+                        // Add a marker to the map
+                        const marker = L.marker([lat, lng]).addTo(map);
+
+                        // Add a popup to display weather details
+                        marker.bindPopup(`<b>${place_name}</b><br>Temperature: ${temperature}°C<br>Condition: ${condition}`).openPopup();
+                    } else {
+                        console.error('Weather data not available for:', place_name);
+                    }
+                }).catch(error => {
+                    console.error('Error fetching weather data:', error);
+                });
+            });
+        }
+
+        // Initialize the map when the page loads
+        window.onload = function () {
+            initializeMap();
+            attachEventListeners(); // Attach event listeners for form validation and budget calculation
+        };
 </script>
 
 
 
             <!-- Submit Button -->
-            <input type="submit" id="submit-btn" value="Calculate Budget" disabled>
+      		<button type="submit">Book Now</button>
+	
         </form>
     </div>
 </body>

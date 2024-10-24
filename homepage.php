@@ -179,11 +179,7 @@
             <li><strong>Travel Guides:</strong> Access comprehensive guides to help you navigate new destinations. Learn about local culture, customs, and must-see attractions.</li>
         </ul>
         
-        <div class="button-container">
-            <a href="trip_details.php">Explore Trips</a>
-            <a href="booktrip.php">Start Planning</a>
-        </div>
-    </div>
+            </div>
 
     <!-- Bootstrap JS and jQuery -->
     <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>

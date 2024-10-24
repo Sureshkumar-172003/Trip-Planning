@@ -17,6 +17,7 @@
         .register-container {
             background-color: #1f1f1f; /* Dark container background */
             padding: 20px; /* Reduced padding */
+	    padding-top: 10%;
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
             width: 80%; /* Adjusted width */

@@ -125,11 +125,13 @@
         <div class="nav-bar">
             <a href="homepage.php">Home</a>
             <a href="booktrip.php">Choose Plan</a>
+	    <a href="about.php">About</a>
            
             
             <?php
              if(isset($_SESSION['userid'])){
                 ?>
+		<a href="profile.php">Profile</a>
                 <a href="logout.php">Logout</a> 
             <?php }else{
                 echo ' <a href="user_login.php">User Login</a>';
